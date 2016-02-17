@@ -267,9 +267,12 @@ class ApiDocExtractor
         if (null !== $return = $annotation->getReturn()) {
             $response = array();
 
+            $normalizedOutput = $this->normalizeClassParameter($return);
+
             foreach ($this->parsers as $parser) {
-                if ($parser->supports($return)) {
-                    $response = $parser->parse($return);
+
+                if ($parser->supports($normalizedOutput)) {
+                    $response = $parser->parse($normalizedOutput);
                     break;
                 }
             }
@@ -326,6 +329,29 @@ class ApiDocExtractor
 
         return $annotation;
     }
+
+    protected function normalizeClassParameter($input)
+    {
+
+        $defaults = array(
+            'class'   => '',
+            'groups'  => array(),
+            'options'  => array(),
+        );
+
+        // normalize strings
+        if (is_string($input)) {
+            $input = array('class' => $input);
+        }
+
+        // normalize groups
+        if (isset($input['groups']) && is_string($input['groups'])) {
+            $input['groups'] = array_map('trim', explode(',', $input['groups']));
+        }
+
+        return array_merge($defaults, $input);
+    }
+
 
     /**
      * Parses annotations for a given method, and adds new information to the given ApiDoc

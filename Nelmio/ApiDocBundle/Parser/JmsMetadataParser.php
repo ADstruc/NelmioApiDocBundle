@@ -13,6 +13,8 @@ namespace Nelmio\ApiDocBundle\Parser;
 
 use Metadata\MetadataFactoryInterface;
 use Nelmio\ApiDocBundle\Util\DocCommentExtractor;
+use JMS\SerializerBundle\Serializer\Exclusion\GroupsExclusionStrategy;
+use JMS\SerializerBundle\SerializationContext;
 use JMS\SerializerBundle\Metadata\PropertyMetadata;
 use JMS\SerializerBundle\Metadata\VirtualPropertyMetadata;
 
@@ -48,8 +50,10 @@ class JmsMetadataParser implements ParserInterface
      */
     public function supports($input)
     {
+        $className = $input['class'];
+
         try {
-            if ($meta = $this->factory->getMetadataForClass($input)) {
+            if ($meta = $this->factory->getMetadataForClass($className)) {
                 return true;
             }
         } catch (\ReflectionException $e) {
@@ -63,10 +67,18 @@ class JmsMetadataParser implements ParserInterface
      */
     public function parse($input)
     {
-        $meta = $this->factory->getMetadataForClass($input);
+        $className = $input['class'];
+
+        $meta = $this->factory->getMetadataForClass($className);
 
         if (null === $meta) {
-            throw new \InvalidArgumentException(sprintf("No metadata found for class %s", $input));
+            throw new \InvalidArgumentException(sprintf("No metadata found for class %s", $className));
+        }
+
+        $groups = $input['groups'];
+        $exclusionStrategies = array();
+        if (true) {
+            $exclusionStrategies[] = new GroupsExclusionStrategy($groups);
         }
 
         $params = array();
@@ -79,10 +91,16 @@ class JmsMetadataParser implements ParserInterface
 
                 $dataType = $this->processDataType($item->type);
 
+                // apply exclusion strategies
+                foreach ($exclusionStrategies as $strategy) {
+                    if (true === $strategy->shouldSkipProperty($item)) {
+                        continue 2;
+                    }
+                }
                 $params[$name] = array(
                     'dataType' => $dataType['normalized'],
                     'required'      => false,   //TODO: can't think of a good way to specify this one, JMS doesn't have a setting for this
-                    'description'   => $this->getDescription($input, $item),
+                    'description'   => $this->getDescription($item),
                     'readonly' => $item->readOnly
                 );
 
@@ -94,7 +112,7 @@ class JmsMetadataParser implements ParserInterface
                 //check for nested classes with JMS metadata
                 if ($dataType['class'] && null !== $this->factory->getMetadataForClass($dataType['class'])) {
                     $this->parsedClasses[] = $dataType['class'];
-                    $params[$name]['children'] = $this->parse($dataType['class']);
+                    $params[$name]['children'] = $this->parse(array_merge($dataType, array('groups' => $groups)));
                 }
             }
         }
@@ -148,7 +166,7 @@ class JmsMetadataParser implements ParserInterface
 
     protected function isPrimitive($type)
     {
-        return in_array($type, array('boolean', 'integer', 'string', 'double', 'array', 'DateTime'));
+        return in_array($type, array('boolean', 'integer', 'string', 'double', 'float', 'array', 'DateTime'));
     }
 
     /**
@@ -169,9 +187,9 @@ class JmsMetadataParser implements ParserInterface
         return null;
     }
 
-    protected function getDescription($className, PropertyMetadata $item)
+    protected function getDescription(PropertyMetadata $item)
     {
-        $ref = new \ReflectionClass($className);
+        $ref = new \ReflectionClass($item->class);
         if ($item instanceof VirtualPropertyMetadata) {
             $extracted = $this->commentExtractor->getDocCommentText($ref->getMethod($item->getter));
         } else {
@@ -182,3 +200,4 @@ class JmsMetadataParser implements ParserInterface
     }
 
 }
+
